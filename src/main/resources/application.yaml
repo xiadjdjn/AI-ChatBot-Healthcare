@@ -1,0 +1,72 @@
+server:
+  port: 8080
+
+
+spring:
+  config:
+    import: optional:classpath:application-dev.yaml
+  #MongoDB杩炴帴閰嶇疆
+  data:
+    mongodb:
+      uri: ${app.mongodb.uri}
+
+  #MySQL杩炴帴閰嶇疆
+  datasource:
+    url: ${app.datasource.url}
+    username: ${app.datasource.username}
+    password: ${app.datasource.password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+# mp寮€鍚?SQL 鏃ュ織鎵撳嵃
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+
+
+
+langchain4j:
+  open-ai:
+    chat-model:
+#      base-url: http://langchain4j.dev/demo/openai/v1
+#      api-key: demo
+#      model-name: gpt-4o-mini
+
+      #闃块噷浜戠櫨鐐兼帴鍏eepseek
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: ${app.langchain4j.open-ai.api-key}
+      model-name: deepseek-v4-pro
+
+      #绋嬪簭鍙戦€佺粰澶фā鍨嬬殑璇锋眰鏃ュ織鍜屽搷搴旀棩蹇?
+      log-requests: true
+      log-responses: true
+
+  #闃块噷浜戞帴鍏ュ崈闂ぇ妯″瀷
+  community:
+    dashscope:
+      chat-model:
+        api-key: ${app.langchain4j.dashscope.api-key}
+        model-name: qwen-max
+
+      streaming-chat-model:
+        api-key: ${app.langchain4j.dashscope.api-key}
+        model-name: qwen-max
+
+      #闆嗘垚闃块噷閫氫箟鍗冮棶-閫氱敤鏂囨湰鍚戦噺-v3
+      embedding-model:
+        api-key: ${app.langchain4j.dashscope.api-key}
+        model-name: text-embedding-v3
+  # The properties are the same as `QwenChatModel`
+  # e.g.
+  # langchain4j.community.dashscope.chat-model.temperature=0.7
+  # langchain4j.community.dashscope.chat-model.max-tokens=4096
+
+
+#璁剧疆绯荤粺鏃ュ織
+logging:
+  level:
+    root: info
+
+
+#Pinecone鏁版嵁鍚戦噺搴揂PI绉橀挜
+pinecone:
+  api-key: ${app.pinecone.api-key}
