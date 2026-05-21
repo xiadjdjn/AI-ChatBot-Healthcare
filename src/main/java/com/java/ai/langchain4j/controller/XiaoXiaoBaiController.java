@@ -98,6 +98,7 @@ public class XiaoXiaoBaiController {
         log.info("用户信息: {}", chatForm);
         Long memoryId = chatForm.getMemoryId();
         chatSessionService.ensureSession(memoryId);
+        chatSessionService.updateTitleIfAbsent(memoryId, chatForm.getMessage());
 
         chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_USER, chatForm.getMessage());
         chatSessionService.refreshSession(memoryId, chatForm.getMessage());

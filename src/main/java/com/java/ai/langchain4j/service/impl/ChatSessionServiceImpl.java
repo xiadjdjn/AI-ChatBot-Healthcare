@@ -36,6 +36,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     private static final DateTimeFormatter TITLE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
+     * 默认标题前缀。
+     */
+    private static final String DEFAULT_TITLE_PREFIX = "新会话";
+
+    /**
      * MongoDB 操作模板。
      */
     @Autowired
@@ -112,6 +117,28 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     /**
+     * 在会话还没有正式标题时，根据用户第一句话生成并更新标题。
+     *
+     * @param sessionId 会话 ID
+     * @param firstUserMessage 用户第一句话
+     */
+    @Override
+    public void updateTitleIfAbsent(Long sessionId, String firstUserMessage) {
+        if (sessionId == null || !StringUtils.hasText(firstUserMessage)) {
+            return;
+        }
+
+        ChatSession chatSession = ensureSession(sessionId);
+        if (!shouldGenerateTitle(chatSession)) {
+            return;
+        }
+
+        chatSession.setTitle(generateSessionTitle(firstUserMessage));
+        chatSession.setUpdatedAt(LocalDateTime.now());
+        mongoTemplate.save(chatSession);
+    }
+
+    /**
      * 查询所有会话列表，并按更新时间倒序返回。
      *
      * @return 会话列表
@@ -168,7 +195,46 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         if (StringUtils.hasText(title)) {
             return title.trim();
         }
-        return "New Session " + TITLE_TIME_FORMATTER.format(now);
+        return DEFAULT_TITLE_PREFIX + " " + TITLE_TIME_FORMATTER.format(now);
+    }
+
+    /**
+     * 判断当前会话是否需要根据首句生成正式标题。
+     *
+     * @param chatSession 当前会话
+     * @return 是否需要生成标题
+     */
+    private boolean shouldGenerateTitle(ChatSession chatSession) {
+        String title = chatSession.getTitle();
+        return !StringUtils.hasText(title) || title.startsWith(DEFAULT_TITLE_PREFIX);
+    }
+
+    /**
+     * 根据用户第一句话生成会话标题。
+     *
+     * @param firstUserMessage 用户第一句话
+     * @return 生成后的会话标题
+     */
+    private String generateSessionTitle(String firstUserMessage) {
+        String normalized = firstUserMessage
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .replace("\t", " ")
+            .trim();
+        if (!StringUtils.hasText(normalized)) {
+            return DEFAULT_TITLE_PREFIX;
+        }
+
+        normalized = normalized.replaceFirst("^(你好|您好|请问|麻烦问一下|我想咨询一下|我想问一下|想咨询一下|想问一下)[，,：: ]*", "");
+        normalized = normalized.replaceAll("\\s+", "");
+        normalized = normalized.replaceAll("[。！？!?；;，,]+$", "");
+
+        if (!StringUtils.hasText(normalized)) {
+            return DEFAULT_TITLE_PREFIX;
+        }
+
+        int maxLength = 16;
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
     }
 
     /**

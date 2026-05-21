@@ -29,6 +29,14 @@ public interface ChatSessionService {
     void refreshSession(Long sessionId, String lastMessage);
 
     /**
+     * 在会话还没有正式标题时，根据用户第一句话生成并更新标题。
+     *
+     * @param sessionId 会话 ID
+     * @param firstUserMessage 用户第一句话
+     */
+    void updateTitleIfAbsent(Long sessionId, String firstUserMessage);
+
+    /**
      * 查询全部会话列表，按更新时间倒序返回。
      *
      * @return 会话列表
