@@ -3,10 +3,18 @@ package com.java.ai.langchain4j.bean;
 import lombok.Data;
 
 /**
- * 接受前端传来的用户聊天信息
+ * 接收前端提交的对话请求参数。
  */
 @Data
 public class ChatForm {
-    private Long memoryId;//对话id
-    private String message;//用户问题
+
+    /**
+     * 当前会话唯一标识。
+     */
+    private Long memoryId;
+
+    /**
+     * 用户本次发送的问题内容。
+     */
+    private String message;
 }

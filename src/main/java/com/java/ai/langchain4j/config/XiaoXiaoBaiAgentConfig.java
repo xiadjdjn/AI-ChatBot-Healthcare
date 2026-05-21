@@ -24,6 +24,10 @@ public class XiaoXiaoBaiAgentConfig {
     @Autowired
     private MongoChatMemoryStore mongoChatMemoryStore;
 
+    /**
+     * 设置记忆存储--Mongo
+     * @return
+     */
     @Bean
     ChatMemoryProvider chatMemoryProviderXiaoXiaoBai() {
         return memoryId -> MessageWindowChatMemory.builder()
@@ -39,6 +43,11 @@ public class XiaoXiaoBaiAgentConfig {
     private EmbeddingModel embeddingModel;
     @Autowired
     private EmbeddingStore embeddingStore;
+
+    /**
+     * 设置向量存储--Pincone
+     * @return
+     */
     @Bean
     ContentRetriever contentRetrieverXiaoXiaoBaiPincone() {
         // 创建一个 EmbeddingStoreContentRetriever 对象，用于从嵌入存储中检索内容
