@@ -14,6 +14,7 @@ import dev.langchain4j.data.message.UserMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -148,6 +149,22 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         Query query = new Query().with(Sort.by(Sort.Direction.DESC, "updatedAt"));
         List<ChatSession> sessions = mongoTemplate.find(query, ChatSession.class);
         return sessions == null ? Collections.emptyList() : sessions;
+    }
+
+    /**
+     * 删除指定会话，并同步删除会话历史记录。
+     *
+     * @param sessionId 会话 ID
+     */
+    @Override
+    public void deleteSession(Long sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+
+        chatDisplayMessageService.deleteMessagesBySessionId(sessionId);
+        mongoTemplate.remove(new Query(Criteria.where("_id").is(sessionId)), ChatMessages.class);
+        mongoTemplate.remove(new Query(Criteria.where("_id").is(sessionId)), ChatSession.class);
     }
 
     /**

@@ -5,6 +5,7 @@ import com.java.ai.langchain4j.bean.ChatForm;
 import com.java.ai.langchain4j.bean.ChatSession;
 import com.java.ai.langchain4j.bean.ChatSessionHistory;
 import com.java.ai.langchain4j.bean.CreateSessionForm;
+import com.java.ai.langchain4j.rag.RetrievalReferenceHolder;
 import com.java.ai.langchain4j.service.ChatDisplayMessageService;
 import com.java.ai.langchain4j.service.ChatSessionService;
 import com.java.ai.langchain4j.service.impl.ChatDisplayMessageServiceImpl;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -55,7 +57,7 @@ public class XiaoXiaoBaiController {
      * @param createSessionForm 创建会话请求参数
      * @return 新建后的会话信息
      */
-    @Operation(summary = "Create session")
+    @Operation(summary = "新建会话")
     @PostMapping("/sessions")
     public ChatSession createSession(@RequestBody(required = false) CreateSessionForm createSessionForm) {
         Long memoryId = createSessionForm == null ? null : createSessionForm.getMemoryId();
@@ -68,10 +70,21 @@ public class XiaoXiaoBaiController {
      *
      * @return 会话列表
      */
-    @Operation(summary = "List sessions")
+    @Operation(summary = "会话列表")
     @GetMapping("/sessions")
     public List<ChatSession> listSessions() {
         return chatSessionService.listSessions();
+    }
+
+    /**
+     * 删除指定会话，并同步删除该会话的历史记录。
+     *
+     * @param memoryId 会话 ID
+     */
+    @Operation(summary = "删除指定会话")
+    @DeleteMapping("/sessions/{memoryId}")
+    public void deleteSession(@PathVariable Long memoryId) {
+        chatSessionService.deleteSession(memoryId);
     }
 
     /**
@@ -80,7 +93,7 @@ public class XiaoXiaoBaiController {
      * @param memoryId 会话 ID
      * @return 会话元数据和展示消息
      */
-    @Operation(summary = "Get session history")
+    @Operation(summary = "获取指定会话历史消息")
     @GetMapping("/sessions/{memoryId}/history")
     public ChatSessionHistory getSessionHistory(@PathVariable Long memoryId) {
         return chatSessionService.getSessionHistory(memoryId);
@@ -97,16 +110,19 @@ public class XiaoXiaoBaiController {
     public Flux<String> chat(@RequestBody ChatForm chatForm) {
         log.info("用户信息: {}", chatForm);
         Long memoryId = chatForm.getMemoryId();
+        String userMessage = chatForm.getMessage();
         chatSessionService.ensureSession(memoryId);
-        chatSessionService.updateTitleIfAbsent(memoryId, chatForm.getMessage());
+        chatSessionService.updateTitleIfAbsent(memoryId, userMessage);
+        RetrievalReferenceHolder.clear(memoryId, userMessage);
 
-        chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_USER, chatForm.getMessage());
-        chatSessionService.refreshSession(memoryId, chatForm.getMessage());
+        chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_USER, userMessage);
+        chatSessionService.refreshSession(memoryId, userMessage);
 
         StringBuilder assistantReplyBuilder = new StringBuilder();
-        return xiaoXiaoBaiAgent.chat(memoryId, chatForm.getMessage())
+        return xiaoXiaoBaiAgent.chat(memoryId, userMessage)
             .doOnNext(assistantReplyBuilder::append)
-            .doOnComplete(() -> saveAssistantReply(memoryId, assistantReplyBuilder.toString()));
+            .doOnComplete(() -> saveAssistantReply(memoryId, assistantReplyBuilder.toString(), RetrievalReferenceHolder.get(memoryId, userMessage)))
+            .doFinally(signalType -> RetrievalReferenceHolder.clear(memoryId, userMessage));
     }
 
     /**
@@ -114,12 +130,13 @@ public class XiaoXiaoBaiController {
      *
      * @param memoryId 会话 ID
      * @param assistantReply 大模型完整回复
+     * @param references 命中的知识来源名称列表
      */
-    private void saveAssistantReply(Long memoryId, String assistantReply) {
+    private void saveAssistantReply(Long memoryId, String assistantReply, List<String> references) {
         if (assistantReply == null || assistantReply.isBlank()) {
             return;
         }
-        chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_ASSISTANT, assistantReply);
+        chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_ASSISTANT, assistantReply, references);
         chatSessionService.refreshSession(memoryId, assistantReply);
     }
 }

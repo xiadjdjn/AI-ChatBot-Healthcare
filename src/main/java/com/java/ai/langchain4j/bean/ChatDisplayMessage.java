@@ -9,6 +9,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 前端展示用的会话消息文档，只保存用户消息和大模型回复。
@@ -50,4 +51,9 @@ public class ChatDisplayMessage {
      * 消息创建时间。
      */
     private LocalDateTime createdAt;
+
+    /**
+     * 当前 AI 回复命中的知识来源名称列表，仅 AI 消息可能有值。
+     */
+    private List<String> references;
 }

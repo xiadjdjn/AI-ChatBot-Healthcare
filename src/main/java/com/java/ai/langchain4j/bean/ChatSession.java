@@ -19,34 +19,24 @@ import java.time.LocalDateTime;
 @Document("chat_sessions")
 public class ChatSession {
 
-    /**
-     * 会话唯一标识，同时作为 MongoDB 文档主键。
-     */
+     //会话唯一标识，同时作为 MongoDB 文档主键。
     @Id
     private Long sessionId;
 
-    /**
-     * 会话标题，用于前端列表展示。
-     */
+     //会话标题，用于前端列表展示。
     private String title;
 
-    /**
-     * 会话最后一条消息摘要。
-     */
+     //会话最后一条消息摘要。
     private String lastMessage;
 
-    /**
-     * 当前会话累计消息条数。
-     */
+     // 当前会话累计消息条数。
     private Integer messageCount;
 
-    /**
-     * 会话创建时间。
-     */
+
+     //会话创建时间。
     private LocalDateTime createdAt;
 
-    /**
-     * 会话最后更新时间。
-     */
+
+     //会话最后更新时间。
     private LocalDateTime updatedAt;
 }

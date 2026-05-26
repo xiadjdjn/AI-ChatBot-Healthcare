@@ -44,6 +44,13 @@ public interface ChatSessionService {
     List<ChatSession> listSessions();
 
     /**
+     * 删除指定会话，并同步删除会话历史记录。
+     *
+     * @param sessionId 会话 ID
+     */
+    void deleteSession(Long sessionId);
+
+    /**
      * 查询指定会话的元信息和历史消息。
      *
      * @param sessionId 会话 ID

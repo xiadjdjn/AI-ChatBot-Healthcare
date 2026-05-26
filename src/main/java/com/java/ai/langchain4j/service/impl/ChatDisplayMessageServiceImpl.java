@@ -47,6 +47,20 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
      */
     @Override
     public ChatDisplayMessage saveMessage(Long sessionId, String role, String content) {
+        return saveMessage(sessionId, role, content, Collections.emptyList());
+    }
+
+    /**
+     * 保存一条前端展示消息，并携带命中的知识来源。
+     *
+     * @param sessionId 会话 ID
+     * @param role 消息角色
+     * @param content 消息内容
+     * @param references 命中的知识来源名称列表
+     * @return 保存后的消息对象
+     */
+    @Override
+    public ChatDisplayMessage saveMessage(Long sessionId, String role, String content, List<String> references) {
         if (sessionId == null) {
             throw new IllegalArgumentException("sessionId cannot be null");
         }
@@ -63,6 +77,7 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
             .content(content)
             .messageOrder(nextMessageOrder(sessionId))
             .createdAt(LocalDateTime.now())
+            .references(references == null ? Collections.emptyList() : references)
             .build();
         return mongoTemplate.save(message);
     }
@@ -92,6 +107,17 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
             return;
         }
         mongoTemplate.insert(messages, ChatDisplayMessage.class);
+    }
+
+    /**
+     * 删除指定会话下的全部展示消息。
+     *
+     * @param sessionId 会话 ID
+     */
+    @Override
+    public void deleteMessagesBySessionId(Long sessionId) {
+        Query query = new Query(Criteria.where("sessionId").is(sessionId));
+        mongoTemplate.remove(query, ChatDisplayMessage.class);
     }
 
     /**
