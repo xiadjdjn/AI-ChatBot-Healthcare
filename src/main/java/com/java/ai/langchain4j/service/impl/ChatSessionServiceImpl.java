@@ -23,7 +23,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 基于 MongoDB 的会话管理服务实现。
@@ -41,15 +43,9 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      */
     private static final String DEFAULT_TITLE_PREFIX = "新会话";
 
-    /**
-     * MongoDB 操作模板。
-     */
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    /**
-     * 前端展示消息服务。
-     */
     @Autowired
     private ChatDisplayMessageService chatDisplayMessageService;
 
@@ -140,14 +136,52 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     /**
-     * 查询所有会话列表，并按更新时间倒序返回。
+     * 查询全部会话列表，按更新时间倒序返回。
      *
      * @return 会话列表
      */
     @Override
     public List<ChatSession> listSessions() {
-        Query query = new Query().with(Sort.by(Sort.Direction.DESC, "updatedAt"));
-        List<ChatSession> sessions = mongoTemplate.find(query, ChatSession.class);
+        return listSessions(null);
+    }
+
+    /**
+     * 根据关键字模糊查询会话列表，关键字匹配用户发送的消息内容。
+     *
+     * @param keyword 搜索关键字
+     * @return 会话列表
+     */
+    @Override
+    public List<ChatSession> listSessions(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            Query query = new Query().with(Sort.by(Sort.Direction.DESC, "updatedAt"));
+            List<ChatSession> sessions = mongoTemplate.find(query, ChatSession.class);
+            return sessions == null ? Collections.emptyList() : sessions;
+        }
+
+        String escapedKeyword = escapeRegex(keyword.trim());
+        Query messageQuery = new Query(new Criteria().andOperator(
+            Criteria.where("role").is(ChatDisplayMessageServiceImpl.ROLE_USER),
+            Criteria.where("content").regex(escapedKeyword, "i")
+        ));
+        List<ChatDisplayMessage> matchedMessages = mongoTemplate.find(messageQuery, ChatDisplayMessage.class);
+        if (matchedMessages == null || matchedMessages.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Set<Long> matchedSessionIds = new LinkedHashSet<>();
+        for (ChatDisplayMessage matchedMessage : matchedMessages) {
+            if (matchedMessage.getSessionId() != null) {
+                matchedSessionIds.add(matchedMessage.getSessionId());
+            }
+        }
+        if (matchedSessionIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Query sessionQuery = new Query(Criteria.where("_id").in(matchedSessionIds))
+            .with(Sort.by(Sort.Direction.DESC, "updatedAt"));
+        List<ChatSession> sessions = mongoTemplate.find(sessionQuery, ChatSession.class);
         return sessions == null ? Collections.emptyList() : sessions;
     }
 
@@ -242,9 +276,9 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return DEFAULT_TITLE_PREFIX;
         }
 
-        normalized = normalized.replaceFirst("^(你好|您好|请问|麻烦问一下|我想咨询一下|我想问一下|想咨询一下|想问一下)[，,：: ]*", "");
+        normalized = normalized.replaceFirst("^(你好|您好|请问|麻烦问一下|我想咨询一下|我想问一下|想咨询一下|想问一下)[，,？? ]*", "");
         normalized = normalized.replaceAll("\\s+", "");
-        normalized = normalized.replaceAll("[。！？!?；;，,]+$", "");
+        normalized = normalized.replaceAll("[。！!？?，,]+$", "");
 
         if (!StringUtils.hasText(normalized)) {
             return DEFAULT_TITLE_PREFIX;
@@ -335,5 +369,15 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return text;
         }
         return text.substring(0, maxLength);
+    }
+
+    /**
+     * 对用户输入的关键字进行正则转义，避免模糊搜索误伤正则元字符。
+     *
+     * @param keyword 搜索关键字
+     * @return 转义后的关键字
+     */
+    private String escapeRegex(String keyword) {
+        return keyword.replaceAll("([\\\\.*+\\[\\](){}|^-])", "\\\\$1");
     }
 }

@@ -44,6 +44,15 @@ public interface ChatSessionService {
     List<ChatSession> listSessions();
 
     /**
+     * 根据关键字模糊查询会话列表，关键字匹配用户发送的消息内容。
+     * 关键字为空时返回全部会话。
+     *
+     * @param keyword 搜索关键字
+     * @return 会话列表
+     */
+    List<ChatSession> listSessions(String keyword);
+
+    /**
      * 删除指定会话，并同步删除会话历史记录。
      *
      * @param sessionId 会话 ID

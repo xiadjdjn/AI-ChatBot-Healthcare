@@ -19,7 +19,6 @@ public class XiaoXiaoBaiAgentConfig {
 
     /**
      * 设置记忆存储--Mongo
-     *
      * @return 聊天记忆提供器
      */
     @Bean
@@ -39,7 +38,6 @@ public class XiaoXiaoBaiAgentConfig {
 
     /**
      * 设置向量检索器，并记录命中的知识来源。
-     *
      * @return 内容检索器
      */
     @Bean

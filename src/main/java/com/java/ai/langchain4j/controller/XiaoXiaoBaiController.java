@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
@@ -33,21 +34,12 @@ import java.util.List;
 @Slf4j
 public class XiaoXiaoBaiController {
 
-    /**
-     * 小小白智能体接口。
-     */
     @Autowired
     private XiaoXiaoBaiAgent xiaoXiaoBaiAgent;
 
-    /**
-     * 会话管理服务。
-     */
     @Autowired
     private ChatSessionService chatSessionService;
 
-    /**
-     * 前端展示消息服务。
-     */
     @Autowired
     private ChatDisplayMessageService chatDisplayMessageService;
 
@@ -68,17 +60,17 @@ public class XiaoXiaoBaiController {
     /**
      * 查询全部会话列表。
      *
+     * @param keyword 搜索关键字，按用户消息内容模糊匹配
      * @return 会话列表
      */
     @Operation(summary = "会话列表")
     @GetMapping("/sessions")
-    public List<ChatSession> listSessions() {
-        return chatSessionService.listSessions();
+    public List<ChatSession> listSessions(@RequestParam(value = "keyword", required = false) String keyword) {
+        return chatSessionService.listSessions(keyword);
     }
 
     /**
      * 删除指定会话，并同步删除该会话的历史记录。
-     *
      * @param memoryId 会话 ID
      */
     @Operation(summary = "删除指定会话")
@@ -89,7 +81,6 @@ public class XiaoXiaoBaiController {
 
     /**
      * 查询指定会话的历史消息。
-     *
      * @param memoryId 会话 ID
      * @return 会话元数据和展示消息
      */
