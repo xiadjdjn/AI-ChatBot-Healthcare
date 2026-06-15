@@ -130,20 +130,8 @@ public class DoctorScheduleServiceImpl extends ServiceImpl<DoctorScheduleMapper,
         ensureDoctorNameAvailable(currentRows, department, doctorName);
 
         boolean doctorEnabled = resolveBoolean(form.getEnabled(), isDoctorEnabled(current));
-        for (DoctorSchedule schedule : currentRows) {
-            DoctorSchedule update = new DoctorSchedule();
-            update.setId(schedule.getId());
-            update.setDepartment(department);
-            update.setDoctorName(doctorName);
-            update.setTitle(form.getTitle());
-            update.setSpecialty(form.getSpecialty());
-            update.setDoctorEnabled(doctorEnabled ? 1 : 0);
-            update.setEnabled(isMorning(schedule.getTime())
-                ? (resolveBoolean(form.getMorningDuty(), isSlotRowEnabled(schedule)) ? 1 : 0)
-                : (resolveBoolean(form.getAfternoonDuty(), isSlotRowEnabled(schedule)) ? 1 : 0));
-            update.setTotalCount(resolveTotalCount(schedule.getTime(), form, schedule.getTotalCount()));
-            baseMapper.updateById(update);
-        }
+        upsertScheduleSlot(currentRows, department, doctorName, form, doctorEnabled, MORNING, form.getMorningDuty());
+        upsertScheduleSlot(currentRows, department, doctorName, form, doctorEnabled, AFTERNOON, form.getAfternoonDuty());
         return findDoctorSummary(department, doctorName);
     }
 
@@ -345,6 +333,32 @@ public class DoctorScheduleServiceImpl extends ServiceImpl<DoctorScheduleMapper,
         schedule.setDoctorEnabled(doctorEnabled ? 1 : 0);
         schedule.setEnabled(slotEnabled ? 1 : 0);
         return schedule;
+    }
+
+    private void upsertScheduleSlot(List<DoctorSchedule> currentRows, String department, String doctorName, DoctorDutyForm form,
+                                    boolean doctorEnabled, String slot, Integer requestedDuty) {
+        DoctorSchedule existing = currentRows.stream()
+            .filter(schedule -> slot.equals(normalizeSlot(schedule.getTime())))
+            .findFirst()
+            .orElse(null);
+        boolean slotEnabled = resolveBoolean(requestedDuty, existing != null && isSlotRowEnabled(existing));
+        int totalCount = resolveTotalCount(slot, form, existing == null ? null : existing.getTotalCount());
+
+        if (existing == null) {
+            save(buildSchedule(department, doctorName, form, doctorEnabled, slot, slotEnabled, totalCount));
+            return;
+        }
+
+        DoctorSchedule update = new DoctorSchedule();
+        update.setId(existing.getId());
+        update.setDepartment(department);
+        update.setDoctorName(doctorName);
+        update.setTitle(form.getTitle());
+        update.setSpecialty(form.getSpecialty());
+        update.setDoctorEnabled(doctorEnabled ? 1 : 0);
+        update.setEnabled(slotEnabled ? 1 : 0);
+        update.setTotalCount(totalCount);
+        baseMapper.updateById(update);
     }
 
     private int resolveTotalCount(String time, DoctorDutyForm form, Integer fallback) {

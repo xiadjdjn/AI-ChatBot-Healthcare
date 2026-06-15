@@ -4,15 +4,19 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 /**
- * 个人中心预约记录摘要。
+ * 管理员查看用户预约信息摘要。
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserAppointmentSummary {
+public class AdminAppointmentSummary {
 
     private Long id;
+
+    private String accountUsername;
 
     private String patientName;
 
@@ -27,4 +31,6 @@ public class UserAppointmentSummary {
     private String doctorName;
 
     private String status;
+
+    private LocalDateTime updatedAt;
 }

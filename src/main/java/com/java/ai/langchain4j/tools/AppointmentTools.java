@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +28,8 @@ public class AppointmentTools {
     public String bookAppointment(Appointment appointment){
         bindCurrentUser(appointment);
         appointment.setTime(normalizeTime(appointment.getTime()));
+        appointment.setStatus(AppointmentService.STATUS_IN_PROGRESS);
+        appointment.setUpdatedAt(LocalDateTime.now());
         DoctorSchedule schedule = doctorScheduleService.findAvailableSchedule(
             appointment.getDepartment(),
             appointment.getDate(),
@@ -56,8 +59,10 @@ public class AppointmentTools {
     bindCurrentUser(appointment);
     Appointment appointmentDB = appointmentService.getOne(appointment);
         if(appointmentDB != null){
-            //删除预约记录
-            if(appointmentService.removeById(appointmentDB.getId())){
+            //取消预约时保留记录，仅更新状态。
+            appointmentDB.setStatus(AppointmentService.STATUS_CANCELLED);
+            appointmentDB.setUpdatedAt(LocalDateTime.now());
+            if(appointmentService.updateById(appointmentDB)){
             return "取消预约成功";
             }else{
                 return "取消预约失败";
