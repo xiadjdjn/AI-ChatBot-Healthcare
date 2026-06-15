@@ -25,8 +25,8 @@ public class EmbeddingStoreConfig {
         //创建向量存储
         EmbeddingStore<TextSegment> embeddingStore = PineconeEmbeddingStore.builder()
             .apiKey(apiKey)
-            .index("xiaozhi-index")//如果指定的索引不存在，将创建一个新的索引
-            .nameSpace("xiaozhi-namespace") //如果指定的名称空间不存在，将创建一个新的名称 空间
+            .index("xiaoxiaobai-index")//如果指定的索引不存在，将创建一个新的索引
+            .nameSpace("xiaoxiaobai-namespace") //如果指定的名称空间不存在，将创建一个新的名称 空间
             .createIndex(PineconeServerlessIndexConfig.builder()
                 .cloud("AWS") //指定索引部署在 AWS 云服务上。
                 .region("us-east-1") //指定索引所在的 AWS 区域为 us-east-1。

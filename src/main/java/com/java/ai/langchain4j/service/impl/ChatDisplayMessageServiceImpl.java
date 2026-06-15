@@ -46,8 +46,8 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
      * @return 保存后的消息对象
      */
     @Override
-    public ChatDisplayMessage saveMessage(Long sessionId, String role, String content) {
-        return saveMessage(sessionId, role, content, Collections.emptyList());
+    public ChatDisplayMessage saveMessage(Long sessionId, Long userId, String role, String content) {
+        return saveMessage(sessionId, userId, role, content, Collections.emptyList());
     }
 
     /**
@@ -60,9 +60,12 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
      * @return 保存后的消息对象
      */
     @Override
-    public ChatDisplayMessage saveMessage(Long sessionId, String role, String content, List<String> references) {
+    public ChatDisplayMessage saveMessage(Long sessionId, Long userId, String role, String content, List<String> references) {
         if (sessionId == null) {
             throw new IllegalArgumentException("sessionId cannot be null");
+        }
+        if (userId == null) {
+            throw new IllegalArgumentException("userId cannot be null");
         }
         if (!StringUtils.hasText(role)) {
             throw new IllegalArgumentException("role cannot be blank");
@@ -73,9 +76,10 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
 
         ChatDisplayMessage message = ChatDisplayMessage.builder()
             .sessionId(sessionId)
+            .userId(userId)
             .role(role)
             .content(content)
-            .messageOrder(nextMessageOrder(sessionId))
+            .messageOrder(nextMessageOrder(sessionId, userId))
             .createdAt(LocalDateTime.now())
             .references(references == null ? Collections.emptyList() : references)
             .build();
@@ -89,8 +93,11 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
      * @return 展示消息列表
      */
     @Override
-    public List<ChatDisplayMessage> listMessages(Long sessionId) {
-        Query query = new Query(Criteria.where("sessionId").is(sessionId))
+    public List<ChatDisplayMessage> listMessages(Long sessionId, Long userId) {
+        Query query = new Query(new Criteria().andOperator(
+                Criteria.where("sessionId").is(sessionId),
+                Criteria.where("userId").is(userId)
+            ))
             .with(Sort.by(Sort.Direction.ASC, "messageOrder"));
         List<ChatDisplayMessage> messages = mongoTemplate.find(query, ChatDisplayMessage.class);
         return messages == null ? Collections.emptyList() : messages;
@@ -115,8 +122,11 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
      * @param sessionId 会话 ID
      */
     @Override
-    public void deleteMessagesBySessionId(Long sessionId) {
-        Query query = new Query(Criteria.where("sessionId").is(sessionId));
+    public void deleteMessagesBySessionId(Long sessionId, Long userId) {
+        Query query = new Query(new Criteria().andOperator(
+            Criteria.where("sessionId").is(sessionId),
+            Criteria.where("userId").is(userId)
+        ));
         mongoTemplate.remove(query, ChatDisplayMessage.class);
     }
 
@@ -126,8 +136,11 @@ public class ChatDisplayMessageServiceImpl implements ChatDisplayMessageService 
      * @param sessionId 会话 ID
      * @return 下一条顺序号
      */
-    private Long nextMessageOrder(Long sessionId) {
-        Query query = new Query(Criteria.where("sessionId").is(sessionId))
+    private Long nextMessageOrder(Long sessionId, Long userId) {
+        Query query = new Query(new Criteria().andOperator(
+                Criteria.where("sessionId").is(sessionId),
+                Criteria.where("userId").is(userId)
+            ))
             .with(Sort.by(Sort.Direction.DESC, "messageOrder"))
             .limit(1);
         ChatDisplayMessage latestMessage = mongoTemplate.findOne(query, ChatDisplayMessage.class);

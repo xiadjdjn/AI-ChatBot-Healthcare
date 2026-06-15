@@ -70,3 +70,7 @@ logging:
 #Pinecone数据向量库API秘钥
 pinecone:
   api-key: ${app.pinecone.api-key}
+
+jwt:
+  secret: ${app.jwt.secret:xiaobai}
+  expiration-seconds: ${app.jwt.expiration-seconds:7200}

@@ -33,6 +33,11 @@ public class ChatDisplayMessage {
     private Long sessionId;
 
     /**
+     * 所属登录用户 ID。
+     */
+    private Long userId;
+
+    /**
      * 消息角色，仅保存 user 或 assistant。
      */
     private String role;

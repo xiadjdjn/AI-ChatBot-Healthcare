@@ -13,7 +13,7 @@ import static dev.langchain4j.service.spring.AiServiceWiringMode.EXPLICIT;
     //chatModel = "qwenChatModel",
     streamingChatModel = "qwenStreamingChatModel", //配置流式输出模型
     chatMemoryProvider = "chatMemoryProviderXiaoXiaoBai",   //配置聊天记忆存储--使用MongoDB存储聊天记录
-    tools = "appointmentTools",
+    tools = {"appointmentTools", "doctorDutyTools"},
     contentRetriever = "contentRetrieverXiaoXiaoBaiPincone"    //配置向量存储--使用Pincone
 )
 public interface XiaoXiaoBaiAgent {

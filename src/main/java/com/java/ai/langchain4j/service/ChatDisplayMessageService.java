@@ -17,7 +17,7 @@ public interface ChatDisplayMessageService {
      * @param content 消息内容
      * @return 保存后的消息对象
      */
-    ChatDisplayMessage saveMessage(Long sessionId, String role, String content);
+    ChatDisplayMessage saveMessage(Long sessionId, Long userId, String role, String content);
 
     /**
      * 保存一条前端展示消息，并携带命中的知识来源。
@@ -28,7 +28,7 @@ public interface ChatDisplayMessageService {
      * @param references 命中的知识来源名称列表
      * @return 保存后的消息对象
      */
-    ChatDisplayMessage saveMessage(Long sessionId, String role, String content, List<String> references);
+    ChatDisplayMessage saveMessage(Long sessionId, Long userId, String role, String content, List<String> references);
 
     /**
      * 查询指定会话的展示消息列表。
@@ -36,7 +36,7 @@ public interface ChatDisplayMessageService {
      * @param sessionId 会话 ID
      * @return 展示消息列表
      */
-    List<ChatDisplayMessage> listMessages(Long sessionId);
+    List<ChatDisplayMessage> listMessages(Long sessionId, Long userId);
 
     /**
      * 批量保存展示消息列表。
@@ -50,5 +50,5 @@ public interface ChatDisplayMessageService {
      *
      * @param sessionId 会话 ID
      */
-    void deleteMessagesBySessionId(Long sessionId);
+    void deleteMessagesBySessionId(Long sessionId, Long userId);
 }

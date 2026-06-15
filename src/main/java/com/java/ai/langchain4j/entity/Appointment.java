@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
 public class Appointment {
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long userId;
+    private String accountUsername;
     private String username;
     private String idCard;
     private String department;  //科室

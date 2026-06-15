@@ -10,19 +10,11 @@ public interface KnowledgeIngestService {
 
     /**
      * 上传文件并写入知识库。
-     *
-     * @param file 上传文件
-     * @param name 文档名称
-     * @return 入库结果
      */
     KnowledgeDocumentSummary ingestUploadedFile(MultipartFile file, String name);
 
     /**
      * 将手工录入文本写入知识库。
-     *
-     * @param name 文档名称
-     * @param content 文本内容
-     * @return 入库结果
      */
     KnowledgeDocumentSummary ingestText(String name, String content);
 

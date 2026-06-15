@@ -9,8 +9,10 @@ import com.java.ai.langchain4j.rag.RetrievalReferenceHolder;
 import com.java.ai.langchain4j.service.ChatDisplayMessageService;
 import com.java.ai.langchain4j.service.ChatSessionService;
 import com.java.ai.langchain4j.service.impl.ChatDisplayMessageServiceImpl;
+import com.java.ai.langchain4j.util.UserContextHolder;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -51,10 +53,10 @@ public class XiaoXiaoBaiController {
      */
     @Operation(summary = "新建会话")
     @PostMapping("/sessions")
-    public ChatSession createSession(@RequestBody(required = false) CreateSessionForm createSessionForm) {
-        Long memoryId = createSessionForm == null ? null : createSessionForm.getMemoryId();
+    public ChatSession createSession(@RequestBody(required = false) CreateSessionForm createSessionForm,
+                                     HttpServletRequest request) {
         String title = createSessionForm == null ? null : createSessionForm.getTitle();
-        return chatSessionService.createSession(memoryId, title);
+        return chatSessionService.createSession(currentUserId(request), title);
     }
 
     /**
@@ -65,8 +67,9 @@ public class XiaoXiaoBaiController {
      */
     @Operation(summary = "会话列表")
     @GetMapping("/sessions")
-    public List<ChatSession> listSessions(@RequestParam(value = "keyword", required = false) String keyword) {
-        return chatSessionService.listSessions(keyword);
+    public List<ChatSession> listSessions(@RequestParam(value = "keyword", required = false) String keyword,
+                                          HttpServletRequest request) {
+        return chatSessionService.listSessions(currentUserId(request), keyword);
     }
 
     /**
@@ -75,8 +78,8 @@ public class XiaoXiaoBaiController {
      */
     @Operation(summary = "删除指定会话")
     @DeleteMapping("/sessions/{memoryId}")
-    public void deleteSession(@PathVariable Long memoryId) {
-        chatSessionService.deleteSession(memoryId);
+    public void deleteSession(@PathVariable Long memoryId, HttpServletRequest request) {
+        chatSessionService.deleteSession(memoryId, currentUserId(request));
     }
 
     /**
@@ -86,8 +89,8 @@ public class XiaoXiaoBaiController {
      */
     @Operation(summary = "获取指定会话历史消息")
     @GetMapping("/sessions/{memoryId}/history")
-    public ChatSessionHistory getSessionHistory(@PathVariable Long memoryId) {
-        return chatSessionService.getSessionHistory(memoryId);
+    public ChatSessionHistory getSessionHistory(@PathVariable Long memoryId, HttpServletRequest request) {
+        return chatSessionService.getSessionHistory(memoryId, currentUserId(request));
     }
 
     /**
@@ -98,22 +101,28 @@ public class XiaoXiaoBaiController {
      */
     @Operation(summary = "Chat")
     @PostMapping(value = "/chat", produces = "text/stream;charset=utf-8")
-    public Flux<String> chat(@RequestBody ChatForm chatForm) {
+    public Flux<String> chat(@RequestBody ChatForm chatForm, HttpServletRequest request) {
         log.info("用户信息: {}", chatForm);
-        Long memoryId = chatForm.getMemoryId();
+        Long userId = currentUserId(request);
+        String username = currentUsername(request);
+        Long memoryId = resolveMemoryId(chatForm, userId);
         String userMessage = chatForm.getMessage();
-        chatSessionService.ensureSession(memoryId);
-        chatSessionService.updateTitleIfAbsent(memoryId, userMessage);
+        chatSessionService.ensureSession(memoryId, userId);
+        chatSessionService.updateTitleIfAbsent(memoryId, userId, userMessage);
         RetrievalReferenceHolder.clear(memoryId, userMessage);
+        UserContextHolder.set(userId, username);
 
-        chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_USER, userMessage);
-        chatSessionService.refreshSession(memoryId, userMessage);
+        chatDisplayMessageService.saveMessage(memoryId, userId, ChatDisplayMessageServiceImpl.ROLE_USER, userMessage);
+        chatSessionService.refreshSession(memoryId, userId, userMessage);
 
         StringBuilder assistantReplyBuilder = new StringBuilder();
         return xiaoXiaoBaiAgent.chat(memoryId, userMessage)
             .doOnNext(assistantReplyBuilder::append)
-            .doOnComplete(() -> saveAssistantReply(memoryId, assistantReplyBuilder.toString(), RetrievalReferenceHolder.get(memoryId, userMessage)))
-            .doFinally(signalType -> RetrievalReferenceHolder.clear(memoryId, userMessage));
+            .doOnComplete(() -> saveAssistantReply(memoryId, userId, assistantReplyBuilder.toString(), RetrievalReferenceHolder.get(memoryId, userMessage)))
+            .doFinally(signalType -> {
+                RetrievalReferenceHolder.clear(memoryId, userMessage);
+                UserContextHolder.clear();
+            });
     }
 
     /**
@@ -123,11 +132,44 @@ public class XiaoXiaoBaiController {
      * @param assistantReply 大模型完整回复
      * @param references 命中的知识来源名称列表
      */
-    private void saveAssistantReply(Long memoryId, String assistantReply, List<String> references) {
+    private void saveAssistantReply(Long memoryId, Long userId, String assistantReply, List<String> references) {
         if (assistantReply == null || assistantReply.isBlank()) {
             return;
         }
-        chatDisplayMessageService.saveMessage(memoryId, ChatDisplayMessageServiceImpl.ROLE_ASSISTANT, assistantReply, references);
-        chatSessionService.refreshSession(memoryId, assistantReply);
+        chatDisplayMessageService.saveMessage(memoryId, userId, ChatDisplayMessageServiceImpl.ROLE_ASSISTANT, assistantReply, references);
+        chatSessionService.refreshSession(memoryId, userId, assistantReply);
+    }
+
+    /**
+     * 获取当前登录用户 ID。
+     *
+     * @param request HTTP 请求
+     * @return 当前登录用户 ID
+     */
+    private Long currentUserId(HttpServletRequest request) {
+        Object userId = request.getAttribute("userId");
+        if (userId instanceof Long currentUserId) {
+            return currentUserId;
+        }
+        throw new IllegalArgumentException("current user is not authenticated");
+    }
+
+    private String currentUsername(HttpServletRequest request) {
+        Object username = request.getAttribute("username");
+        return username == null ? null : String.valueOf(username);
+    }
+
+    /**
+     * 解析本轮对话使用的会话 ID。
+     *
+     * @param chatForm 对话请求参数
+     * @param userId 当前登录用户 ID
+     * @return 会话 ID
+     */
+    private Long resolveMemoryId(ChatForm chatForm, Long userId) {
+        if (chatForm.getMemoryId() != null) {
+            return chatForm.getMemoryId();
+        }
+        return chatSessionService.createSession(userId, null).getSessionId();
     }
 }

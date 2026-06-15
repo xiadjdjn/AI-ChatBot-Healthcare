@@ -1,9 +1,14 @@
 package com.java.ai.langchain4j.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.java.ai.langchain4j.bean.AdminChatSessionSummary;
 import com.java.ai.langchain4j.bean.ChatDisplayMessage;
 import com.java.ai.langchain4j.bean.ChatMessages;
 import com.java.ai.langchain4j.bean.ChatSession;
 import com.java.ai.langchain4j.bean.ChatSessionHistory;
+import com.java.ai.langchain4j.bean.PageResult;
+import com.java.ai.langchain4j.entity.User;
+import com.java.ai.langchain4j.mapper.UserMapper;
 import com.java.ai.langchain4j.service.ChatDisplayMessageService;
 import com.java.ai.langchain4j.service.ChatSessionService;
 import dev.langchain4j.data.message.AiMessage;
@@ -23,8 +28,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -43,30 +50,35 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      */
     private static final String DEFAULT_TITLE_PREFIX = "新会话";
 
+    private static final Set<Integer> ADMIN_PAGE_SIZE_OPTIONS = Set.of(10, 15, 20);
+
     @Autowired
     private MongoTemplate mongoTemplate;
 
     @Autowired
     private ChatDisplayMessageService chatDisplayMessageService;
 
+    @Autowired
+    private UserMapper userMapper;
+
     /**
      * 创建新的会话元数据记录。
      *
-     * @param sessionId 会话 ID
+     * @param userId 登录用户 ID
      * @param title 会话标题
      * @return 创建后的会话对象
      */
     @Override
-    public ChatSession createSession(Long sessionId, String title) {
-        Long resolvedSessionId = resolveSessionId(sessionId);
-        ChatSession existingSession = mongoTemplate.findById(resolvedSessionId, ChatSession.class);
-        if (existingSession != null) {
-            return existingSession;
+    public ChatSession createSession(Long userId, String title) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId cannot be null");
         }
+        Long resolvedSessionId = generateAvailableSessionId();
 
         LocalDateTime now = LocalDateTime.now();
         ChatSession chatSession = ChatSession.builder()
             .sessionId(resolvedSessionId)
+            .userId(userId)
             .title(resolveTitle(title, now))
             .lastMessage("")
             .messageCount(0)
@@ -83,15 +95,19 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @return 已存在或新建的会话对象
      */
     @Override
-    public ChatSession ensureSession(Long sessionId) {
+    public ChatSession ensureSession(Long sessionId, Long userId) {
         if (sessionId == null) {
             throw new IllegalArgumentException("memoryId cannot be null");
         }
+        if (userId == null) {
+            throw new IllegalArgumentException("userId cannot be null");
+        }
         ChatSession existingSession = mongoTemplate.findById(sessionId, ChatSession.class);
         if (existingSession != null) {
+            assertSessionOwner(existingSession, userId);
             return existingSession;
         }
-        return createSession(sessionId, null);
+        throw new IllegalArgumentException("chat session does not exist");
     }
 
     /**
@@ -101,11 +117,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @param lastMessage 最新展示消息内容
      */
     @Override
-    public void refreshSession(Long sessionId, String lastMessage) {
+    public void refreshSession(Long sessionId, Long userId, String lastMessage) {
         if (sessionId == null) {
             return;
         }
-        ChatSession chatSession = ensureSession(sessionId);
+        ChatSession chatSession = ensureSession(sessionId, userId);
         int currentCount = chatSession.getMessageCount() == null ? 0 : chatSession.getMessageCount();
         chatSession.setMessageCount(currentCount + 1);
         chatSession.setLastMessage(limitLength(lastMessage, 200));
@@ -120,12 +136,12 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @param firstUserMessage 用户第一句话
      */
     @Override
-    public void updateTitleIfAbsent(Long sessionId, String firstUserMessage) {
+    public void updateTitleIfAbsent(Long sessionId, Long userId, String firstUserMessage) {
         if (sessionId == null || !StringUtils.hasText(firstUserMessage)) {
             return;
         }
 
-        ChatSession chatSession = ensureSession(sessionId);
+        ChatSession chatSession = ensureSession(sessionId, userId);
         if (!shouldGenerateTitle(chatSession)) {
             return;
         }
@@ -141,8 +157,8 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @return 会话列表
      */
     @Override
-    public List<ChatSession> listSessions() {
-        return listSessions(null);
+    public List<ChatSession> listSessions(Long userId) {
+        return listSessions(userId, null);
     }
 
     /**
@@ -152,15 +168,20 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @return 会话列表
      */
     @Override
-    public List<ChatSession> listSessions(String keyword) {
+    public List<ChatSession> listSessions(Long userId, String keyword) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId cannot be null");
+        }
         if (!StringUtils.hasText(keyword)) {
-            Query query = new Query().with(Sort.by(Sort.Direction.DESC, "updatedAt"));
+            Query query = new Query(Criteria.where("userId").is(userId))
+                .with(Sort.by(Sort.Direction.DESC, "updatedAt"));
             List<ChatSession> sessions = mongoTemplate.find(query, ChatSession.class);
             return sessions == null ? Collections.emptyList() : sessions;
         }
 
         String escapedKeyword = escapeRegex(keyword.trim());
         Query messageQuery = new Query(new Criteria().andOperator(
+            Criteria.where("userId").is(userId),
             Criteria.where("role").is(ChatDisplayMessageServiceImpl.ROLE_USER),
             Criteria.where("content").regex(escapedKeyword, "i")
         ));
@@ -179,10 +200,59 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return Collections.emptyList();
         }
 
-        Query sessionQuery = new Query(Criteria.where("_id").in(matchedSessionIds))
+        Query sessionQuery = new Query(new Criteria().andOperator(
+                Criteria.where("_id").in(matchedSessionIds),
+                Criteria.where("userId").is(userId)
+            ))
             .with(Sort.by(Sort.Direction.DESC, "updatedAt"));
         List<ChatSession> sessions = mongoTemplate.find(sessionQuery, ChatSession.class);
         return sessions == null ? Collections.emptyList() : sessions;
+    }
+
+    /**
+     * 管理员分页查询所有用户的会话标题列表。
+     *
+     * @param username 用户名查询条件
+     * @param nickname 昵称查询条件
+     * @param pageNum 页码
+     * @param pageSize 每页条数
+     * @return 会话标题分页结果
+     */
+    @Override
+    public PageResult<AdminChatSessionSummary> listAdminSessionSummaries(String username, String nickname, Integer pageNum, Integer pageSize) {
+        int resolvedPageNum = resolvePageNum(pageNum);
+        int resolvedPageSize = resolveAdminPageSize(pageSize);
+        List<Long> userIds = findUserIds(username, nickname);
+        if ((StringUtils.hasText(username) || StringUtils.hasText(nickname)) && userIds.isEmpty()) {
+            return PageResult.<AdminChatSessionSummary>builder()
+                .total(0L)
+                .records(Collections.emptyList())
+                .build();
+        }
+
+        Query countQuery = buildAdminSessionQuery(userIds);
+        long total = mongoTemplate.count(countQuery, ChatSession.class);
+        if (total == 0L) {
+            return PageResult.<AdminChatSessionSummary>builder()
+                .total(0L)
+                .records(Collections.emptyList())
+                .build();
+        }
+
+        Query pageQuery = buildAdminSessionQuery(userIds)
+            .with(Sort.by(Sort.Direction.DESC, "updatedAt"))
+            .skip((long) (resolvedPageNum - 1) * resolvedPageSize)
+            .limit(resolvedPageSize);
+        pageQuery.fields()
+            .include("userId")
+            .include("title")
+            .include("createdAt")
+            .include("updatedAt");
+        List<ChatSession> sessions = mongoTemplate.find(pageQuery, ChatSession.class);
+        return PageResult.<AdminChatSessionSummary>builder()
+            .total(total)
+            .records(toAdminSummaries(sessions))
+            .build();
     }
 
     /**
@@ -191,14 +261,18 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @param sessionId 会话 ID
      */
     @Override
-    public void deleteSession(Long sessionId) {
+    public void deleteSession(Long sessionId, Long userId) {
         if (sessionId == null) {
             return;
         }
 
-        chatDisplayMessageService.deleteMessagesBySessionId(sessionId);
+        ensureSession(sessionId, userId);
+        chatDisplayMessageService.deleteMessagesBySessionId(sessionId, userId);
         mongoTemplate.remove(new Query(Criteria.where("_id").is(sessionId)), ChatMessages.class);
-        mongoTemplate.remove(new Query(Criteria.where("_id").is(sessionId)), ChatSession.class);
+        mongoTemplate.remove(new Query(new Criteria().andOperator(
+            Criteria.where("_id").is(sessionId),
+            Criteria.where("userId").is(userId)
+        )), ChatSession.class);
     }
 
     /**
@@ -209,30 +283,163 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @return 会话详情
      */
     @Override
-    public ChatSessionHistory getSessionHistory(Long sessionId) {
-        ChatSession session = ensureSession(sessionId);
-        List<ChatDisplayMessage> messages = chatDisplayMessageService.listMessages(sessionId);
+    public ChatSessionHistory getSessionHistory(Long sessionId, Long userId) {
+        ChatSession session = ensureSession(sessionId, userId);
+        List<ChatDisplayMessage> messages = chatDisplayMessageService.listMessages(sessionId, userId);
         if (messages.isEmpty()) {
-            messages = migrateMessagesFromMemory(sessionId);
+            messages = migrateMessagesFromMemory(sessionId, userId);
         }
         return new ChatSessionHistory(session, messages);
     }
 
     /**
-     * 解析最终会话 ID，未指定时自动生成可用 ID。
+     * 生成会话 ID。
      *
-     * @param sessionId 前端传入的会话 ID
-     * @return 可用的会话 ID
+     * @return 会话 ID
      */
-    private Long resolveSessionId(Long sessionId) {
-        if (sessionId != null) {
-            return sessionId;
-        }
+    private Long generateAvailableSessionId() {
         long generatedId = System.currentTimeMillis();
         while (mongoTemplate.findById(generatedId, ChatSession.class) != null) {
             generatedId++;
         }
         return generatedId;
+    }
+
+    /**
+     * 查询符合条件的用户 ID。
+     *
+     * @param username 用户名查询条件
+     * @param nickname 昵称查询条件
+     * @return 用户 ID 列表
+     */
+    private List<Long> findUserIds(String username, String nickname) {
+        if (!StringUtils.hasText(username) && !StringUtils.hasText(nickname)) {
+            return Collections.emptyList();
+        }
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.select(User::getId);
+        if (StringUtils.hasText(username)) {
+            queryWrapper.like(User::getUsername, username.trim());
+        }
+        if (StringUtils.hasText(nickname)) {
+            queryWrapper.like(User::getNickname, nickname.trim());
+        }
+        return userMapper.selectList(queryWrapper).stream()
+            .map(User::getId)
+            .toList();
+    }
+
+    /**
+     * 转换管理员会话标题列表项。
+     *
+     * @param sessions 会话元数据列表
+     * @return 管理员会话标题列表项
+     */
+    private List<AdminChatSessionSummary> toAdminSummaries(List<ChatSession> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<Long, User> userMap = loadUserMap(sessions);
+        List<AdminChatSessionSummary> summaries = new ArrayList<>();
+        for (ChatSession session : sessions) {
+            User user = userMap.get(session.getUserId());
+            summaries.add(new AdminChatSessionSummary(
+                session.getSessionId(),
+                session.getUserId(),
+                user == null ? null : user.getUsername(),
+                user == null ? null : user.getNickname(),
+                session.getTitle(),
+                session.getCreatedAt(),
+                session.getUpdatedAt()
+            ));
+        }
+        return summaries;
+    }
+
+    /**
+     * 加载会话所属用户信息。
+     *
+     * @param sessions 会话元数据列表
+     * @return 用户 ID 到用户信息的映射
+     */
+    private Map<Long, User> loadUserMap(List<ChatSession> sessions) {
+        List<Long> userIds = sessions.stream()
+            .map(ChatSession::getUserId)
+            .filter(userId -> userId != null)
+            .distinct()
+            .toList();
+        if (userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.select(User::getId, User::getUsername, User::getNickname)
+            .in(User::getId, userIds);
+        Map<Long, User> userMap = new HashMap<>();
+        for (User user : userMapper.selectList(queryWrapper)) {
+            userMap.put(user.getId(), user);
+        }
+        return userMap;
+    }
+
+    /**
+     * 构造管理员会话查询。
+     *
+     * @param userIds 用户 ID 列表
+     * @return Mongo 查询对象
+     */
+    private Query buildAdminSessionQuery(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return new Query();
+        }
+        return new Query(Criteria.where("userId").in(userIds));
+    }
+
+    /**
+     * 解析管理员分页页码。
+     *
+     * @param pageNum 页码
+     * @return 有效页码
+     */
+    private int resolvePageNum(Integer pageNum) {
+        if (pageNum == null || pageNum < 1) {
+            return 1;
+        }
+        return pageNum;
+    }
+
+    /**
+     * 解析管理员分页每页条数。
+     *
+     * @param pageSize 每页条数
+     * @return 有效每页条数
+     */
+    private int resolveAdminPageSize(Integer pageSize) {
+        if (pageSize == null) {
+            return 10;
+        }
+        if (!ADMIN_PAGE_SIZE_OPTIONS.contains(pageSize)) {
+            throw new IllegalArgumentException("pageSize must be 10, 15 or 20");
+        }
+        return pageSize;
+    }
+
+    /**
+     * 校验会话是否属于当前登录用户。
+     *
+     * @param chatSession 会话元数据
+     * @param userId 当前登录用户 ID
+     */
+    private void assertSessionOwner(ChatSession chatSession, Long userId) {
+        if (chatSession.getUserId() == null) {
+            chatSession.setUserId(userId);
+            mongoTemplate.save(chatSession);
+            return;
+        }
+        if (!chatSession.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("chat session does not belong to current user");
+        }
     }
 
     /**
@@ -294,7 +501,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
      * @param sessionId 会话 ID
      * @return 迁移后的展示消息列表
      */
-    private List<ChatDisplayMessage> migrateMessagesFromMemory(Long sessionId) {
+    private List<ChatDisplayMessage> migrateMessagesFromMemory(Long sessionId, Long userId) {
         ChatMessages chatMessages = mongoTemplate.findById(sessionId, ChatMessages.class);
         if (chatMessages == null || !StringUtils.hasText(chatMessages.getContent())) {
             return Collections.emptyList();
@@ -311,6 +518,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             }
             displayMessages.add(ChatDisplayMessage.builder()
                 .sessionId(sessionId)
+                .userId(userId)
                 .role(role)
                 .content(content)
                 .messageOrder(messageOrder++)

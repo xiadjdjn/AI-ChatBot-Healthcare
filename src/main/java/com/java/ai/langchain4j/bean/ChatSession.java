@@ -23,6 +23,9 @@ public class ChatSession {
     @Id
     private Long sessionId;
 
+     //所属登录用户 ID。
+    private Long userId;
+
      //会话标题，用于前端列表展示。
     private String title;
 
